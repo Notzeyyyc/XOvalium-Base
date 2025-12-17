@@ -1,0 +1,26 @@
+{
+  "name": "new-project",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "module",
+  "dependencies": {
+    "@rexxhayanasi/elaina-baileys": "^1.1.0-DEV.2",
+    "axios": "^1.13.2",
+    "chalk": "^5.6.2",
+    "express": "^5.2.1",
+    "figlet": "^1.9.4",
+    "fs-extra": "^11.3.2",
+    "jimp": "^0.22.12",
+    "node-telegram-bot-api": "^0.67.0",
+    "pino": "^10.1.0",
+    "qrcode": "^1.5.4"
+  }
+}
