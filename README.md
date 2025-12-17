@@ -18,8 +18,8 @@ Pastikan Anda sudah menginstall [Node.js](https://nodejs.org/) dan [Git](https:/
 1.  **Clone Repository**
 
     ```bash
-    git clone https://github.com/Notzeyyyc/XOvalium.git
-    cd XOvalium
+    git clone https://github.com/Notzeyyyc/XOvalium-Base.git
+    cd XOvalium-Base
     ```
 
 2.  **Install Dependencies**
