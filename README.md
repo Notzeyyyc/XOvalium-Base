@@ -29,16 +29,13 @@ Pastikan Anda sudah menginstall [Node.js](https://nodejs.org/) dan [Git](https:/
     ```
 
 3.  **Konfigurasi**
-    Edit file `config/config.js` dan masukkan token Telegram serta API Key OpenRouter Anda.
+    Edit file `config/config.js` dan masukkan token Telegram Bot anda.
 
     ```javascript
     export const config = {
       telegram: {
         token: "TOKEN_TELEGRAM_BOT_KAMU",
         apiUrl: "https://api.telegram.org",
-      },
-      openRouter: {
-        apiKey: "API_KEY_OPENROUTER_KAMU",
       },
       // ...
     };
