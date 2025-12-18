@@ -2,8 +2,6 @@ import { makeWASocket, useMultiFileAuthState, DisconnectReason } from '@rexxhaya
 import pino from 'pino';
 import QRCode from 'qrcode';
 
-import { waHandler } from './wa_handler.js';
-
 export const sessions = new Map();
 
 export async function connectToWhatsApp(bot, chatId, phoneNumber = null, sessionName = 'default') {
@@ -21,11 +19,6 @@ export async function connectToWhatsApp(bot, chatId, phoneNumber = null, session
     });
 
     sessions.set(sessionName, sock);
-
-    // Call the Message Handler
-    sock.ev.on('messages.upsert', async (m) => {
-        await waHandler(sock, m);
-    });
 
     // Request Pairing Code Logic
     if (phoneNumber && !sock.authState.creds.registered) {
